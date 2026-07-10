@@ -34,6 +34,9 @@ async def connect_mongodb():
     await mongodb.documents.create_index("user_id")
     await mongodb.quizzes.create_index("user_id")
     await mongodb.quizzes.create_index("document_id")
+    await mongodb.mistakes.create_index("child_id")
+    await mongodb.mistakes.create_index("subject")
+    await mongodb.mistakes.create_index("chapter")
 
     logger.info("MongoDB 连接成功，索引已创建")
 

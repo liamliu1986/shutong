@@ -171,12 +171,12 @@ class KnowledgeGraphService:
                     "knowledge_points": kps
                 })
 
-            # 获取知识点关联关系
+            # 获取指定学科下的知识点关联关系
             relations_result = await session.run("""
-                MATCH (a:KnowledgePoint)-[r]->(b:KnowledgePoint)
+                MATCH (s:Subject {id: $subject_id})-[:HAS_CHAPTER]->(:Chapter)-[:HAS_KNOWLEDGE_POINT]->(a:KnowledgePoint)-[r]->(b:KnowledgePoint)
                 WHERE type(r) IN ['RELATED_TO', 'PREREQUISITE_OF']
                 RETURN a.id as from_id, b.id as to_id, type(r) as type
-            """)
+            """, subject_id=subject_id)
 
             relations = []
             async for record in relations_result:

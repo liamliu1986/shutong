@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import connect_mongodb, close_mongodb, connect_neo4j, close_neo4j
-from app.api import auth, knowledge_graph
+from app.api import auth, knowledge_graph, mistakes, question_bank, papers, children
 
 # 配置日志
 logging.basicConfig(
@@ -63,6 +63,10 @@ def create_app() -> FastAPI:
     # 注册路由
     app.include_router(auth.router, prefix="/api/v1", tags=["认证"])
     app.include_router(knowledge_graph.router, prefix="/api/v1", tags=["知识图谱"])
+    app.include_router(mistakes.router, prefix="/api/v1", tags=["错题本"])
+    app.include_router(question_bank.router, prefix="/api/v1", tags=["题库管理"])
+    app.include_router(papers.router, prefix="/api/v1", tags=["试卷管理"])
+    app.include_router(children.router, prefix="/api/v1", tags=["孩子管理"])
     app.include_router(api_router)
 
     # 根路由

@@ -58,8 +58,18 @@ async def test_login(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_login_wrong_password(client: AsyncClient):
     """测试错误密码登录"""
+    # 先注册用户
+    user_data = {
+        "username": "wrongpassuser",
+        "email": "wrongpass@example.com",
+        "password": "Test123456"
+    }
+    register_response = await client.post("/api/v1/auth/register", json=user_data)
+    assert register_response.status_code == 200
+
+    # 使用错误密码登录
     login_data = {
-        "email": "test@example.com",
+        "email": "wrongpass@example.com",
         "password": "wrongpassword"
     }
     response = await client.post("/api/v1/auth/login", json=login_data)
@@ -69,14 +79,7 @@ async def test_login_wrong_password(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_get_profile(client: AsyncClient, test_user):
     """测试获取用户信息"""
-    # 先登录获取 token
-    login_data = {
-        "email": "test@example.com",
-        "password": "testpassword123"
-    }
-    login_response = await client.post("/api/v1/auth/login", json=login_data)
-    token = login_response.json()["access_token"]
-
+    token = test_user["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
     response = await client.get("/api/v1/users/me", headers=headers)

@@ -5,28 +5,21 @@ import asyncio
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.main import app
 from app.config import get_settings
-from app.database import connect_mongodb, close_mongodb, connect_neo4j, close_neo4j, get_mongodb
+from app.database import connect_mongodb, close_mongodb, connect_neo4j, close_neo4j, get_mongodb, get_neo4j
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """创建事件循环"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def setup_database():
     """连接测试数据库"""
     settings = get_settings()
-    # 使用测试数据库
-    test_db_name = "shutong_test"
-    settings.MONGODB_URI = f"mongodb://localhost:27017/{test_db_name}"
+    # 使用测试数据库，优先从环境变量读取基础 URI
+    base_mongodb_uri = settings.MONGODB_URI
+    if base_mongodb_uri.endswith("/"):
+        base_mongodb_uri = base_mongodb_uri.rstrip("/")
+    settings.MONGODB_URI = f"{base_mongodb_uri}/shutong_test"
 
     await connect_mongodb()
     await connect_neo4j()
@@ -39,11 +32,16 @@ async def setup_database():
     for collection in collections:
         await mongodb[collection].drop()
 
+    # 清理 Neo4j 数据
+    neo4j_driver = get_neo4j()
+    async with neo4j_driver.session() as session:
+        await session.run("MATCH (n) DETACH DELETE n")
+
     await close_mongodb()
     await close_neo4j()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def client(setup_database):
     """创建测试客户端"""
     from httpx import AsyncClient, ASGITransport
@@ -54,29 +52,38 @@ async def client(setup_database):
         yield ac
 
 
-@pytest_asyncio.fixture
-async def test_user(setup_database):
-    """创建测试用户"""
-    from passlib.context import CryptContext
-    from datetime import datetime
-
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    mongodb = get_mongodb()
-
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def test_user(client: AsyncClient):
+    """创建测试用户并返回 TokenResponse"""
     user_data = {
         "username": "testuser",
         "email": "test@example.com",
-        "password_hash": pwd_context.hash("testpassword123"),
-        "children": [],
-        "created_at": datetime.now(),
-        "updated_at": datetime.now()
+        "password": "Test123456"
     }
+    response = await client.post("/api/v1/auth/register", json=user_data)
+    assert response.status_code == 200
+    return response.json()
 
-    # 插入测试用户
-    result = await mongodb.users.insert_one(user_data)
-    user_data["_id"] = result.inserted_id
 
-    yield user_data
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def auth_headers(test_user):
+    """创建带认证头的请求头"""
+    token = test_user["access_token"]
+    return {"Authorization": f"Bearer {token}"}
 
-    # 清理测试用户
-    await mongodb.users.delete_one({"_id": result.inserted_id})
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def test_child(client: AsyncClient, auth_headers):
+    """创建测试孩子"""
+    child_data = {
+        "name": "测试孩子",
+        "grade": 8,
+        "subjects": ["数学"]
+    }
+    response = await client.post(
+        "/api/v1/users/me/children",
+        json=child_data,
+        headers=auth_headers
+    )
+    assert response.status_code == 200
+    return response.json()
