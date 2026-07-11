@@ -11,15 +11,25 @@ from app.config import get_settings
 from app.database import connect_mongodb, close_mongodb, connect_neo4j, close_neo4j, get_mongodb, get_neo4j
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
+@pytest.fixture(scope="session")
+def event_loop():
+    """创建 session 级别的事件循环"""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest_asyncio.fixture(scope="session")
 async def setup_database():
     """连接测试数据库"""
     settings = get_settings()
-    # 使用测试数据库，优先从环境变量读取基础 URI
-    base_mongodb_uri = settings.MONGODB_URI
-    if base_mongodb_uri.endswith("/"):
-        base_mongodb_uri = base_mongodb_uri.rstrip("/")
-    settings.MONGODB_URI = f"{base_mongodb_uri}/shutong_test"
+    # 使用测试数据库，替换路径中的数据库名
+    from urllib.parse import urlparse, urlunparse
+    uri = settings.MONGODB_URI
+    parsed = urlparse(uri)
+    # 替换 path 部分的数据库名
+    new_path = "/shutong_test"
+    settings.MONGODB_URI = urlunparse(parsed._replace(path=new_path))
 
     await connect_mongodb()
     await connect_neo4j()
@@ -41,7 +51,7 @@ async def setup_database():
     await close_neo4j()
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def client(setup_database):
     """创建测试客户端"""
     from httpx import AsyncClient, ASGITransport
@@ -52,7 +62,7 @@ async def client(setup_database):
         yield ac
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def test_user(client: AsyncClient):
     """创建测试用户并返回 TokenResponse"""
     user_data = {
@@ -65,14 +75,14 @@ async def test_user(client: AsyncClient):
     return response.json()
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def auth_headers(test_user):
     """创建带认证头的请求头"""
     token = test_user["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def test_child(client: AsyncClient, auth_headers):
     """创建测试孩子"""
     child_data = {
