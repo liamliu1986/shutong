@@ -48,24 +48,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 初始化：从 localStorage 恢复登录状态
   useEffect(() => {
+    let cancelled = false;
     const storedToken = getStoredToken();
+
     if (storedToken) {
       setToken(storedToken);
       authAPI
         .getProfile()
         .then((response) => {
-          setUser(response.data);
+          if (!cancelled) setUser(response.data);
         })
         .catch(() => {
-          localStorage.removeItem("token");
-          setToken(null);
+          if (!cancelled) {
+            localStorage.removeItem("token");
+            setToken(null);
+          }
         })
         .finally(() => {
-          setIsLoading(false);
+          if (!cancelled) setIsLoading(false);
         });
     } else {
       setIsLoading(false);
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   /**
