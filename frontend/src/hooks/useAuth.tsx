@@ -1,6 +1,6 @@
 "use client";
 
-import {
+import React, {
   createContext,
   useContext,
   useEffect,
@@ -40,7 +40,7 @@ function getStoredToken(): string | null {
 /**
  * 认证上下文提供组件
  */
-export function AuthProvider({ children }: { children: ReactNode }) {
+const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -115,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
-}
+};
 
 /**
  * 使用认证上下文的 Hook
@@ -127,3 +127,6 @@ export function useAuth(): AuthContextType {
   }
   return context;
 }
+
+export default AuthProvider;
+export { AuthProvider };
