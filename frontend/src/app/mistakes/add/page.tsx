@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/layout/MainLayout';
 import { useAuth } from '@/hooks/useAuth';
+import axios from 'axios';
 import { mistakesAPI } from '@/lib/api';
 
 const DIFFICULTY_MAP: Record<string, number> = {
@@ -70,7 +71,7 @@ const AddMistakePage: React.FC = () => {
         difficulty: DIFFICULTY_MAP[formData.difficulty],
         source: formData.source,
         tags: formData.tags
-          .split('，')
+          .split(/[,，]\s*/)
           .map((t) => t.trim())
           .filter(Boolean),
         knowledge_points: [],
@@ -78,9 +79,13 @@ const AddMistakePage: React.FC = () => {
         question_latex: '',
       });
       router.push('/mistakes');
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      setError(typeof detail === 'string' ? detail : '提交失败，请稍后重试');
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        const detail = err.response?.data?.detail;
+        setError(typeof detail === 'string' ? detail : '提交失败，请稍后重试');
+      } else {
+        setError('提交失败，请稍后重试');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -249,7 +254,7 @@ const AddMistakePage: React.FC = () => {
               name="tags"
               value={formData.tags}
               onChange={handleChange}
-              placeholder="用中文逗号分隔，例如：函数, 导数"
+              placeholder="用逗号分隔，例如：函数, 导数"
               className="w-full border rounded-lg px-3 py-2"
             />
           </div>
