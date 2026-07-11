@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from "axios";
+import { Mistake, Question, Paper, GeneratePaperConfig } from "@/types";
 
 /**
  * API 客户端
