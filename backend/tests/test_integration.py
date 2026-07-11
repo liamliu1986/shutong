@@ -33,7 +33,7 @@ async def test_full_workflow(client: AsyncClient):
     mistake_response = await client.post("/api/v1/mistakes", json={
         "child_id": child_id,
         "subject": "数学",
-        "grade": 9,
+        "grade": "九年级",
         "chapter": "二次函数",
         "question_text": "求函数 f(x)=x² 的最小值",
         "answer": "0",

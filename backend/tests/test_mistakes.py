@@ -9,7 +9,7 @@ async def test_create_mistake(client: AsyncClient, test_child, auth_headers):
     mistake_data = {
         "child_id": test_child["id"],
         "subject": "数学",
-        "grade": 8,
+        "grade": "八年级",
         "chapter": "二次函数",
         "question_text": "已知函数f(x)=x²+2x+1，求f(2)的值。",
         "answer": "f(2)=9",
@@ -28,7 +28,7 @@ async def test_create_mistake(client: AsyncClient, test_child, auth_headers):
     data = response.json()
     assert data["child_id"] == test_child["id"]
     assert data["subject"] == "数学"
-    assert data["grade"] == 8
+    assert data["grade"] == "八年级"
     assert data["chapter"] == "二次函数"
     assert data["question_text"] == "已知函数f(x)=x²+2x+1，求f(2)的值。"
     assert data["difficulty"] == 3
@@ -44,7 +44,7 @@ async def test_get_mistakes(client: AsyncClient, test_child, auth_headers):
         mistake_data = {
             "child_id": test_child["id"],
             "subject": "数学",
-            "grade": 8,
+            "grade": "八年级",
             "chapter": f"第{i+1}章",
             "question_text": f"题目{i+1}",
             "difficulty": 2,
@@ -75,7 +75,7 @@ async def test_get_mistakes_with_filters(client: AsyncClient, test_child, auth_h
         mistake_data = {
             "child_id": test_child["id"],
             "subject": subject,
-            "grade": 9,
+            "grade": "九年级",
             "chapter": "测试章节",
             "question_text": f"{subject}题目",
         }
@@ -103,7 +103,7 @@ async def test_get_mistake(client: AsyncClient, test_child, auth_headers):
     mistake_data = {
         "child_id": test_child["id"],
         "subject": "物理",
-        "grade": 10,
+        "grade": "高一",
         "chapter": "力学",
         "question_text": "一个物体受到10N的力，质量为2kg，求加速度。",
         "answer": "a=5m/s²",
@@ -145,7 +145,7 @@ async def test_update_mistake(client: AsyncClient, test_child, auth_headers):
     mistake_data = {
         "child_id": test_child["id"],
         "subject": "化学",
-        "grade": 11,
+        "grade": "高二",
         "chapter": "有机化学",
         "question_text": "原始题目",
         "difficulty": 3,
@@ -196,7 +196,7 @@ async def test_delete_mistake(client: AsyncClient, test_child, auth_headers):
     mistake_data = {
         "child_id": test_child["id"],
         "subject": "历史",
-        "grade": 7,
+        "grade": "七年级",
         "chapter": "古代史",
         "question_text": "待删除的题目",
     }
@@ -239,7 +239,7 @@ async def test_get_explanation(client: AsyncClient, test_child, auth_headers):
     mistake_data = {
         "child_id": test_child["id"],
         "subject": "数学",
-        "grade": 8,
+        "grade": "八年级",
         "chapter": "二次函数",
         "question_text": "求f(x)=x²的最小值",
         "explanation": "二次函数开口向上，顶点为最小值点",
@@ -274,3 +274,46 @@ async def test_get_explanation_not_found(client: AsyncClient, auth_headers):
         headers=auth_headers
     )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_mistake_with_string_grade(client: AsyncClient, auth_headers, test_child):
+    """测试使用字符串标签作为 grade 创建错题"""
+    payload = {
+        "child_id": test_child["id"],
+        "subject": "数学",
+        "grade": "高一",
+        "chapter": "函数与导数",
+        "question_text": "求函数 f(x)=x² 的导数",
+        "answer": "f'(x)=2x",
+        "explanation": "使用幂函数求导法则",
+        "difficulty": 3,
+        "source": "单元测试",
+        "tags": ["求导"],
+        "knowledge_points": [],
+    }
+    response = await client.post("/api/v1/mistakes", json=payload, headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["grade"] == "高一"
+
+
+@pytest.mark.asyncio
+async def test_create_mistake_without_grade(client: AsyncClient, auth_headers, test_child):
+    """测试不传 grade 创建错题"""
+    payload = {
+        "child_id": test_child["id"],
+        "subject": "数学",
+        "chapter": "函数与导数",
+        "question_text": "求函数 f(x)=x² 的导数",
+        "answer": "f'(x)=2x",
+        "explanation": "使用幂函数求导法则",
+        "difficulty": 3,
+        "source": "单元测试",
+        "tags": [],
+        "knowledge_points": [],
+    }
+    response = await client.post("/api/v1/mistakes", json=payload, headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data.get("grade") is None or data.get("grade") == ""

@@ -7,7 +7,7 @@ class MistakeModel(BaseModel):
     id: Optional[str] = Field(None, alias="_id")
     child_id: str
     subject: str
-    grade: int
+    grade: Optional[str] = None
     chapter: str
     knowledge_points: List[str] = []
 
