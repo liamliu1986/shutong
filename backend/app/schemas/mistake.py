@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -53,6 +53,14 @@ class MistakeResponse(BaseModel):
     tags: List[str] = []
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("grade", mode="before")
+    @classmethod
+    def _coerce_grade_to_string(cls, value):
+        """兼容历史整数 grade 数据"""
+        if isinstance(value, int):
+            return str(value)
+        return value
 
 
 class MistakeListResponse(BaseModel):

@@ -1,4 +1,6 @@
 """错题本 API 测试"""
+from datetime import datetime
+
 import pytest
 from httpx import AsyncClient
 
@@ -161,6 +163,7 @@ async def test_update_mistake(client: AsyncClient, test_child, auth_headers):
     update_data = {
         "question_text": "更新后的题目",
         "difficulty": 4,
+        "grade": "高三",
         "tags": ["有机化学", "烷烃"]
     }
     response = await client.put(
@@ -172,6 +175,7 @@ async def test_update_mistake(client: AsyncClient, test_child, auth_headers):
     data = response.json()
     assert data["question_text"] == "更新后的题目"
     assert data["difficulty"] == 4
+    assert data["grade"] == "高三"
     assert data["tags"] == ["有机化学", "烷烃"]
     # 未更新的字段应保持不变
     assert data["subject"] == "化学"
@@ -316,4 +320,38 @@ async def test_create_mistake_without_grade(client: AsyncClient, auth_headers, t
     response = await client.post("/api/v1/mistakes", json=payload, headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
-    assert data.get("grade") is None or data.get("grade") == ""
+    assert data.get("grade") is None
+
+
+@pytest.mark.asyncio
+async def test_historical_integer_grade_compatibility(client: AsyncClient, auth_headers, test_child):
+    """测试历史整数 grade 数据兼容性"""
+    from app.database import get_mongodb
+
+    db = get_mongodb()
+    doc = {
+        "child_id": test_child["id"],
+        "subject": "数学",
+        "grade": 8,
+        "chapter": "历史数据",
+        "question_text": "历史整数年级测试题目",
+        "answer": "",
+        "explanation": "",
+        "difficulty": 3,
+        "source": "",
+        "tags": [],
+        "knowledge_points": [],
+        "created_at": datetime.now(),
+        "updated_at": datetime.now(),
+    }
+    result = await db.mistakes.insert_one(doc)
+    mistake_id = str(result.inserted_id)
+
+    response = await client.get(
+        f"/api/v1/mistakes/{mistake_id}",
+        headers=auth_headers
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # 只要序列化后值可接受即可（Pydantic 默认会转为字符串）
+    assert data["grade"] in (8, "8")
