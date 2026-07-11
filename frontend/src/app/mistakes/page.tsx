@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import MainLayout from '@/components/layout/MainLayout';
 import { useAuth } from '@/hooks/useAuth';
@@ -39,14 +39,12 @@ const MistakesPage: React.FC = () => {
   }, [user, selectedChildId]);
 
   // 拉取错题列表
-  useEffect(() => {
-    if (!selectedChildId) return;
-
+  const fetchMistakes = useCallback((childId: string) => {
     setIsLoading(true);
     setError('');
 
     mistakesAPI
-      .getMistakes({ child_id: selectedChildId })
+      .getMistakes({ child_id: childId })
       .then((response) => {
         setMistakes(response.data.items || []);
       })
@@ -57,7 +55,12 @@ const MistakesPage: React.FC = () => {
       .finally(() => {
         setIsLoading(false);
       });
-  }, [selectedChildId]);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedChildId) return;
+    fetchMistakes(selectedChildId);
+  }, [selectedChildId, fetchMistakes]);
 
   const filteredMistakes = mistakes.filter((mistake) => {
     const difficultyLabel = DIFFICULTY_LABELS[mistake.difficulty] || '中等';
@@ -154,7 +157,16 @@ const MistakesPage: React.FC = () => {
         )}
 
         {error && !isLoading && (
-          <div className="bg-red-50 text-red-600 p-4 rounded-lg text-sm">{error}</div>
+          <div className="bg-red-50 text-red-600 p-4 rounded-lg text-sm flex justify-between items-center">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => fetchMistakes(selectedChildId)}
+              className="px-3 py-1 border border-red-300 rounded hover:bg-red-100 transition-colors"
+            >
+              重试
+            </button>
+          </div>
         )}
 
         {!isLoading && !error && (
@@ -168,7 +180,14 @@ const MistakesPage: React.FC = () => {
                     className="bg-white rounded-lg shadow p-4 hover:shadow-md transition-shadow"
                   >
                     <div className="flex justify-between items-start mb-2">
-                      <span className="text-sm text-gray-500">{mistake.subject}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-500">{mistake.subject}</span>
+                        {mistake.grade && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                            {mistake.grade}
+                          </span>
+                        )}
+                      </div>
                       <span
                         className={`text-xs px-2 py-1 rounded ${DIFFICULTY_COLORS[difficultyLabel]}`}
                       >
@@ -186,7 +205,9 @@ const MistakesPage: React.FC = () => {
             </div>
 
             {filteredMistakes.length === 0 && (
-              <div className="text-center py-12 text-gray-500">暂无错题记录</div>
+              <div className="text-center py-12 text-gray-500">
+                {mistakes.length === 0 ? '暂无错题记录' : '暂无匹配结果'}
+              </div>
             )}
           </>
         )}
