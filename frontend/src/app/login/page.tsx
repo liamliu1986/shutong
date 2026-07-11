@@ -5,6 +5,17 @@ import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 
 /**
+ * 从 API 错误响应中安全提取错误信息
+ */
+function getErrorMessage(err: any, fallback: string): string {
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) return detail.map((item) => String(item)).join('；');
+  if (detail !== undefined && detail !== null) return String(detail);
+  return fallback;
+}
+
+/**
  * 登录页面
  */
 export default function LoginPage() {
@@ -25,7 +36,7 @@ export default function LoginPage() {
     try {
       await login(email, password);
     } catch (err: any) {
-      setError(err.response?.data?.detail || '登录失败，请检查邮箱和密码');
+      setError(getErrorMessage(err, '登录失败，请检查邮箱和密码'));
     } finally {
       setIsLoading(false);
     }
@@ -51,6 +62,7 @@ export default function LoginPage() {
             <input
               id="email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -66,6 +78,7 @@ export default function LoginPage() {
             <input
               id="password"
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required

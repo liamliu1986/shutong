@@ -1,6 +1,6 @@
 "use client";
 
-import React, {
+import {
   createContext,
   useContext,
   useEffect,
@@ -40,7 +40,7 @@ function getStoredToken(): string | null {
 /**
  * 认证上下文提供组件
  */
-const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,24 +48,32 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
 
   // 初始化：从 localStorage 恢复登录状态
   useEffect(() => {
+    let cancelled = false;
     const storedToken = getStoredToken();
+
     if (storedToken) {
       setToken(storedToken);
       authAPI
         .getProfile()
         .then((response) => {
-          setUser(response.data);
+          if (!cancelled) setUser(response.data);
         })
         .catch(() => {
-          localStorage.removeItem("token");
-          setToken(null);
+          if (!cancelled) {
+            localStorage.removeItem("token");
+            setToken(null);
+          }
         })
         .finally(() => {
-          setIsLoading(false);
+          if (!cancelled) setIsLoading(false);
         });
     } else {
       setIsLoading(false);
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   /**
@@ -115,7 +123,7 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
       {children}
     </AuthContext.Provider>
   );
-};
+}
 
 /**
  * 使用认证上下文的 Hook
@@ -127,6 +135,3 @@ export function useAuth(): AuthContextType {
   }
   return context;
 }
-
-export default AuthProvider;
-export { AuthProvider };

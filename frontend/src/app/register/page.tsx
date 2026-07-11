@@ -5,6 +5,17 @@ import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 
 /**
+ * 从 API 错误响应中安全提取错误信息
+ */
+function getErrorMessage(err: any, fallback: string): string {
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) return detail.map((item) => String(item)).join('；');
+  if (detail !== undefined && detail !== null) return String(detail);
+  return fallback;
+}
+
+/**
  * 注册页面
  */
 export default function RegisterPage() {
@@ -23,6 +34,16 @@ export default function RegisterPage() {
     e.preventDefault();
     setError('');
 
+    if (username.trim().length < 2) {
+      setError('用户名长度至少为 2 个字符');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('密码长度至少为 6 个字符');
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError('两次输入的密码不一致');
       return;
@@ -33,7 +54,7 @@ export default function RegisterPage() {
     try {
       await register(username, email, password);
     } catch (err: any) {
-      setError(err.response?.data?.detail || '注册失败，请检查输入信息');
+      setError(getErrorMessage(err, '注册失败，请检查输入信息'));
     } finally {
       setIsLoading(false);
     }
@@ -59,6 +80,7 @@ export default function RegisterPage() {
             <input
               id="username"
               type="text"
+              autoComplete="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
@@ -74,6 +96,7 @@ export default function RegisterPage() {
             <input
               id="email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -89,6 +112,7 @@ export default function RegisterPage() {
             <input
               id="password"
               type="password"
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -104,6 +128,7 @@ export default function RegisterPage() {
             <input
               id="confirmPassword"
               type="password"
+              autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
