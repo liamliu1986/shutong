@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from "axios";
-import { Mistake, Question, Paper, GeneratePaperConfig } from "@/types";
+import { Mistake, Question, Paper, GeneratePaperConfig, Subject, SubjectGraph, MasteryEntry } from "@/types";
 
 /**
  * API 客户端
@@ -68,9 +68,14 @@ export const childrenAPI = {
  * 知识图谱 API
  */
 export const knowledgeGraphAPI = {
-  getSubjects: () => api.get("/subjects"),
+  getSubjects: () => api.get<Subject[]>("/subjects"),
   getSubjectGraph: (subjectId: string) =>
-    api.get(`/subjects/${subjectId}/graph`),
+    api.get<SubjectGraph>(`/subjects/${subjectId}/graph`),
+  initMathGraph: () => api.post("/subjects/init-math"),
+  getChildMastery: (childId: string, subjectId: string) =>
+    api.get<MasteryEntry[]>(`/children/${childId}/mastery`, {
+      params: { subject_id: subjectId },
+    }),
 };
 
 /**
