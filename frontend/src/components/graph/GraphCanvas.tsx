@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
   ReactFlow,
   Background,
@@ -9,17 +9,19 @@ import {
   type Node,
   type Edge,
   type NodeTypes,
+  type Connection,
   MarkerType,
+  SelectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import KnowledgePointNode from './KnowledgePointNode';
 import type { SubjectGraph, Relation } from '@/types';
 
 // 布局常量
-const CHAPTER_GAP = 320; // 章节列间距
-const KP_GAP = 130; // 知识点行间距
-const CHAPTER_TOP_OFFSET = 60; // 章节标题区域高度
-const KP_START_Y = 40; // 第一个知识点的 Y 坐标
+const CHAPTER_GAP = 320;
+const KP_GAP = 130;
+const CHAPTER_TOP_OFFSET = 60;
+const KP_START_Y = 40;
 
 // 注册自定义节点类型
 const nodeTypes: NodeTypes = {
@@ -40,7 +42,7 @@ function buildGraphLayout(
   graph.chapters.forEach((chapter, chapterIndex) => {
     const chapterX = 50 + chapterIndex * CHAPTER_GAP;
 
-    // 章节标题节点（用普通的 PositionNode）
+    // 章节标题节点
     nodes.push({
       id: `chapter-${chapter.id}`,
       type: 'default',
@@ -114,24 +116,65 @@ function buildGraphLayout(
 interface GraphCanvasProps {
   graph: SubjectGraph;
   masteryMap?: Record<string, number>;
+  isEditable?: boolean;
+  selectedNodeId?: string | null;
+  onNodeClick?: (nodeId: string) => void;
+  onConnect?: (connection: Connection) => void;
 }
 
 /**
  * 知识图谱画布组件
  *
  * 接收 SubjectGraph 数据，渲染为交互式 React Flow 图
- * 支持缩放、平移、小地图预览
+ * 支持编辑模式：节点拖拽、关系创建、节点选择
  */
-const GraphCanvas: React.FC<GraphCanvasProps> = ({ graph, masteryMap = {} }) => {
+const GraphCanvas: React.FC<GraphCanvasProps> = ({
+  graph,
+  masteryMap = {},
+  isEditable = false,
+  selectedNodeId,
+  onNodeClick,
+  onConnect,
+}) => {
   const { nodes, edges } = useMemo(
     () => buildGraphLayout(graph, masteryMap),
     [graph, masteryMap]
   );
 
+  // 合并外部传入的 selectedNodeId 到节点数据
+  const nodesWithSelection = useMemo(() => {
+    if (!selectedNodeId) return nodes;
+    return nodes.map((n) => ({
+      ...n,
+      selected: n.id === selectedNodeId,
+    }));
+  }, [nodes, selectedNodeId]);
+
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      if (onConnect) {
+        onConnect(connection);
+      }
+    },
+    [onConnect]
+  );
+
+  const handleNodeClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      if (onNodeClick && node.type === 'knowledgePoint') {
+        onNodeClick(node.id);
+      } else if (onNodeClick && node.id.startsWith('chapter-')) {
+        const chapterId = node.id.replace('chapter-', '');
+        onNodeClick(`chapter-${chapterId}`);
+      }
+    },
+    [onNodeClick]
+  );
+
   return (
     <div className="w-full h-[600px] border rounded-lg bg-white">
       <ReactFlow
-        nodes={nodes}
+        nodes={nodesWithSelection}
         edges={edges}
         nodeTypes={nodeTypes}
         fitView
@@ -139,6 +182,14 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({ graph, masteryMap = {} }) => 
         maxZoom={2}
         attributionPosition="bottom-left"
         className="rounded-lg"
+        nodesDraggable={isEditable}
+        nodesConnectable={isEditable}
+        elementsSelectable={isEditable}
+        selectionMode={isEditable ? SelectionMode.Partial : undefined}
+        onConnect={handleConnect}
+        onNodeClick={handleNodeClick}
+        deleteKeyCode={isEditable ? 'Backspace' : null}
+        multiSelectionKeyCode="Shift"
       >
         <Background color="#f3f4f6" gap={20} />
         <Controls className="!shadow-md" />

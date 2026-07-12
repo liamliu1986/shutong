@@ -6,13 +6,28 @@ import { useAuth } from '@/hooks/useAuth';
 import { knowledgeGraphAPI } from '@/lib/api';
 import type { Subject, SubjectGraph } from '@/types';
 import GraphCanvas from '@/components/graph/GraphCanvas';
+import EditPanel from './components/EditPanel';
+import AddNodeModal from './components/AddNodeModal';
 import axios from 'axios';
+import type { Connection } from '@xyflow/react';
+
+/** 编辑面板选中的节点信息 */
+interface SelectedNodeInfo {
+  id: string;
+  type: 'chapter' | 'knowledgePoint';
+  name: string;
+  description?: string;
+  importance?: number;
+  order?: number;
+  parentChapterId?: string;
+}
+
+type AddMode = 'chapter' | 'knowledgePoint' | null;
 
 /**
  * 知识图谱页面
  *
- * 展示学科知识点的交互式关系图
- * 支持学科切换、孩子选择、掌握度颜色显示
+ * 展示学科知识点的交互式关系图，支持编辑模式
  */
 const KnowledgeGraphPage: React.FC = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
@@ -26,6 +41,12 @@ const KnowledgeGraphPage: React.FC = () => {
   const [isInitLoading, setIsInitLoading] = useState(false);
   const [selectedChildId, setSelectedChildId] = useState('');
   const [masteryMap, setMasteryMap] = useState<Record<string, number>>({});
+
+  // ─── 编辑模式状态 ───
+  const [isEditable, setIsEditable] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
+  const [addMode, setAddMode] = useState<AddMode>(null);
+  const [selectedKpId, setSelectedKpId] = useState<string | null>(null);
 
   // 默认选中第一个孩子
   useEffect(() => {
@@ -73,14 +94,14 @@ const KnowledgeGraphPage: React.FC = () => {
 
     setIsLoadingGraph(true);
     setError('');
+    setSelectedNode(null);
+    setSelectedKpId(null);
 
     knowledgeGraphAPI
       .getSubjectGraph(subjectId)
       .then((response) => {
         const data = response.data;
         setGraph(data);
-
-        // 验证图谱是否为空（无章节）
         if (data.chapters.length === 0) {
           setError('该学科暂无知识图谱数据');
         }
@@ -146,6 +167,106 @@ const KnowledgeGraphPage: React.FC = () => {
     }
   };
 
+  // ─── 编辑模式操作 ───
+
+  /** 切换编辑模式 */
+  const toggleEditMode = () => {
+    setIsEditable((prev) => !prev);
+    setSelectedNode(null);
+    setSelectedKpId(null);
+  };
+
+  /** 图谱变更后刷新 */
+  const refreshGraph = useCallback(() => {
+    fetchGraph(selectedSubjectId);
+  }, [fetchGraph, selectedSubjectId]);
+
+  /** 知识点点击 → 打开编辑面板 */
+  const handleNodeClick = useCallback(
+    (nodeId: string) => {
+      if (!isEditable || !graph) return;
+
+      if (nodeId.startsWith('chapter-')) {
+        const chId = nodeId.replace('chapter-', '');
+        const chapter = graph.chapters.find((c) => c.id === chId);
+        if (chapter) {
+          setSelectedNode({
+            id: chId,
+            type: 'chapter',
+            name: chapter.name,
+            order: chapter.order,
+          });
+          setSelectedKpId(null);
+        }
+      } else {
+        for (const ch of graph.chapters) {
+          const kp = ch.knowledge_points.find((k) => k.id === nodeId);
+          if (kp) {
+            setSelectedNode({
+              id: kp.id,
+              type: 'knowledgePoint',
+              name: kp.name,
+              description: kp.description,
+              importance: kp.importance,
+              parentChapterId: ch.id,
+            });
+            setSelectedKpId(kp.id);
+            return;
+          }
+        }
+        setSelectedNode(null);
+        setSelectedKpId(null);
+      }
+    },
+    [isEditable, graph]
+  );
+
+  /** 连接两个知识点 → 创建关系 */
+  const handleConnect = useCallback(
+    async (connection: Connection) => {
+      if (!connection.source || !connection.target) return;
+
+      const relType = window.prompt('关系类型：1=关联(RELATED_TO), 2=前置(PREREQUISITE_OF)', '1');
+      const type = relType === '2' ? 'PREREQUISITE_OF' : 'RELATED_TO';
+
+      try {
+        await knowledgeGraphAPI.createRelation({
+          from_id: connection.source,
+          to_id: connection.target,
+          type,
+        });
+        refreshGraph();
+      } catch {
+        // 忽略错误
+      }
+    },
+    [refreshGraph]
+  );
+
+  /** 节点编辑后保存 */
+  const handleNodeUpdated = () => {
+    refreshGraph();
+  };
+
+  /** 节点删除后关闭面板 */
+  const handleNodeDeleted = () => {
+    setSelectedNode(null);
+    setSelectedKpId(null);
+    refreshGraph();
+  };
+
+  /** 关闭编辑面板 */
+  const handleClosePanel = () => {
+    setSelectedNode(null);
+    setSelectedKpId(null);
+  };
+
+  /** 内容变更后刷新（新建后） */
+  const handleNodeCreated = () => {
+    setAddMode(null);
+    refreshGraph();
+  };
+
   if (isAuthLoading) {
     return (
       <MainLayout>
@@ -167,7 +288,24 @@ const KnowledgeGraphPage: React.FC = () => {
   return (
     <MainLayout>
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-gray-800">知识图谱</h1>
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-gray-800">知识图谱</h1>
+
+          {/* 编辑模式切换 */}
+          {graph && graph.chapters.length > 0 && (
+            <button
+              type="button"
+              onClick={toggleEditMode}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                isEditable
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {isEditable ? '退出编辑' : '编辑图谱'}
+            </button>
+          )}
+        </div>
 
         {/* 选择器区域 */}
         <div className="bg-white rounded-lg shadow p-4 flex flex-wrap gap-4 items-end">
@@ -213,7 +351,7 @@ const KnowledgeGraphPage: React.FC = () => {
           )}
 
           {/* 初始化数学图谱按钮 */}
-          {(!isLoadingSubjects && subjects.length === 0 && !error) || (
+          {!isLoadingSubjects && subjects.length === 0 && !error && (
             <button
               type="button"
               onClick={handleInitMathGraph}
@@ -266,9 +404,51 @@ const KnowledgeGraphPage: React.FC = () => {
           </div>
         )}
 
-        {/* 图谱内容 */}
+        {/* 图谱内容 + 编辑面板 */}
         {!isLoadingGraph && !isLoadingSubjects && graph && graph.chapters.length > 0 && (
-          <GraphCanvas graph={graph} masteryMap={masteryMap} />
+          <div className="flex gap-0">
+            {/* 图谱主区域 */}
+            <div className="flex-1 min-w-0">
+              <GraphCanvas
+                graph={graph}
+                masteryMap={masteryMap}
+                isEditable={isEditable}
+                selectedNodeId={selectedKpId}
+                onNodeClick={handleNodeClick}
+                onConnect={handleConnect}
+              />
+
+              {/* 编辑模式浮动工具栏 */}
+              {isEditable && (
+                <div className="flex gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setAddMode('chapter')}
+                    className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    + 添加章节
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddMode('knowledgePoint')}
+                    className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    + 添加知识点
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 编辑侧边栏 */}
+            {isEditable && selectedNode && (
+              <EditPanel
+                selectedNode={selectedNode}
+                onClose={handleClosePanel}
+                onUpdated={handleNodeUpdated}
+                onDeleted={handleNodeDeleted}
+              />
+            )}
+          </div>
         )}
 
         {/* 空状态 */}
@@ -286,6 +466,17 @@ const KnowledgeGraphPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* 添加节点弹窗 */}
+      {addMode && graph && (
+        <AddNodeModal
+          nodeType={addMode}
+          chapters={graph.chapters.map((c) => ({ id: c.id, name: c.name }))}
+          subjectId={selectedSubjectId}
+          onClose={() => setAddMode(null)}
+          onCreated={handleNodeCreated}
+        />
+      )}
     </MainLayout>
   );
 };

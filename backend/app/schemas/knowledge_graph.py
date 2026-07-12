@@ -2,9 +2,61 @@
 知识图谱 Pydantic 模型
 定义知识图谱 API 的请求和响应数据结构
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 
+
+# ─── 请求模型（CRUD） ─────────────────────────────────────────────
+
+class SubjectCreate(BaseModel):
+    """创建学科请求"""
+    id: str = Field(..., description="学科唯一标识，如 'math'")
+    name: str = Field(..., description="学科中文名，如 '数学'")
+    grade_level: Optional[str] = Field(None, description="适用年级范围，如 '7-12'")
+
+
+class SubjectUpdate(BaseModel):
+    """更新学科请求"""
+    name: Optional[str] = None
+    grade_level: Optional[str] = None
+
+
+class ChapterCreate(BaseModel):
+    """创建章节请求"""
+    id: str = Field(..., description="章节唯一标识")
+    name: str = Field(..., description="章节名称")
+    order: int = Field(..., description="排序序号")
+
+
+class ChapterUpdate(BaseModel):
+    """更新章节请求"""
+    name: Optional[str] = None
+    order: Optional[int] = None
+
+
+class KnowledgePointCreate(BaseModel):
+    """创建知识点请求"""
+    id: str = Field(..., description="知识点唯一标识")
+    name: str = Field(..., description="知识点名称")
+    description: Optional[str] = None
+    importance: int = Field(3, ge=1, le=5, description="重要度 1-5")
+
+
+class KnowledgePointUpdate(BaseModel):
+    """更新知识点请求"""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    importance: Optional[int] = Field(None, ge=1, le=5)
+
+
+class RelationCreate(BaseModel):
+    """创建关系请求"""
+    from_id: str = Field(..., description="源知识点 ID")
+    to_id: str = Field(..., description="目标知识点 ID")
+    type: str = Field(..., description="关系类型: RELATED_TO 或 PREREQUISITE_OF")
+
+
+# ─── 响应模型 ────────────────────────────────────────────────────
 
 class KnowledgePointResponse(BaseModel):
     """知识点响应"""

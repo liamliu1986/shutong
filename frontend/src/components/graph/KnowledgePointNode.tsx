@@ -26,13 +26,23 @@ function getMasteryTextColor(mastery: number | null | undefined): string {
 }
 
 /**
+ * 知识点节点数据接口
+ */
+interface KnowledgePointNodeData {
+  label: string;
+  mastery?: number | null;
+  importance?: number;
+  description?: string;
+}
+
+/**
  * 知识点节点组件
  *
  * 在知识图谱中渲染单个知识点，显示名称和掌握度
  * 支持连接点（Handles）用于关系连线
  */
 const KnowledgePointNode: React.FC<NodeProps> = ({ data }) => {
-  const { label, mastery, importance, description } = data;
+  const { label, mastery, importance, description } = data as unknown as KnowledgePointNodeData;
 
   return (
     <div

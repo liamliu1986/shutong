@@ -147,9 +147,14 @@ class MistakeService:
         Returns:
             更新后的错题响应，未找到返回 None
         """
+        # 获取原数据以触发掌握度更新
+        original = await self.get_mistake(mistake_id)
+        if original is None:
+            return None
+
         update_data = data.model_dump(exclude_unset=True)
         if not update_data:
-            return await self.get_mistake(mistake_id)
+            return original
 
         update_data["updated_at"] = datetime.now()
 
@@ -166,6 +171,14 @@ class MistakeService:
             return await self.get_mistake(mistake_id)
 
         logger.info(f"更新错题成功: {mistake_id}")
+
+        # 错题更新后触发掌握度重新计算
+        asyncio.create_task(
+            KnowledgeGraphService.update_child_mastery(
+                original.child_id, original.subject
+            )
+        )
+
         return await self.get_mistake(mistake_id)
 
     async def delete_mistake(self, mistake_id: str) -> bool:
@@ -178,6 +191,12 @@ class MistakeService:
         Returns:
             是否删除成功
         """
+        # 获取原数据以触发掌握度更新
+        original = await self.get_mistake(mistake_id)
+        if original is None:
+            logger.info(f"错题未找到: {mistake_id}")
+            return False
+
         try:
             result = await self.collection.delete_one(
                 {"_id": ObjectId(mistake_id)}
@@ -191,6 +210,14 @@ class MistakeService:
             return False
 
         logger.info(f"删除错题成功: {mistake_id}")
+
+        # 删除后触发掌握度重新计算
+        asyncio.create_task(
+            KnowledgeGraphService.update_child_mastery(
+                original.child_id, original.subject
+            )
+        )
+
         return True
 
     async def get_explanation(self, mistake_id: str) -> Optional[dict]:
@@ -207,24 +234,52 @@ class MistakeService:
         if mistake is None:
             return None
 
-        # MVP 阶段返回模拟 AI 解析
-        # TODO: 后续接入大模型 API 生成真正的解析
+        # 如果错题关联了知识点，从知识图谱获取详细信息
+        knowledge_links = []
+        related_kp_names = []
+
+        if mistake.knowledge_points:
+            try:
+                for kp_id in mistake.knowledge_points:
+                    kp_info = await KnowledgeGraphService.get_knowledge_point_detail(kp_id)
+                    if kp_info:
+                        knowledge_links.append({
+                            "id": kp_id,
+                            "name": kp_info["name"],
+                            "description": kp_info.get("description", ""),
+                        })
+                        related_kp_names.append(kp_info["name"])
+            except Exception:
+                logger.warning(f"获取知识点信息失败: {mistake.knowledge_points}")
+
+        # 没有知识图谱数据时使用通用解析
+        if not knowledge_links:
+            knowledge_links = [
+                {
+                    "id": "kl1",
+                    "name": "请先初始化知识图谱，错题将自动关联到知识点",
+                    "description": "在知识图谱页面点击"初始化数学图谱"按钮",
+                }
+            ]
+
+        # 生成复习建议
+        kp_context = ""
+        if related_kp_names:
+            kp_context = f"，重点关注{', '.join(related_kp_names)}"
+
         return {
             "mistake_id": mistake_id,
-            "explanation": mistake.explanation or "这道题考查的是基础知识点，建议先理解概念再做练习。",
+            "explanation": mistake.explanation or (
+                f"这道题考查的是相关知识点{'，'.join(related_kp_names) if related_kp_names else '的基础概念'}"
+                f"，建议先理解概念再做练习。"
+            ),
             "similar_questions": [
                 {
                     "id": "sq1",
-                    "question": "已知函数g(x)=x²-4x+3，求g(1)的值。",
-                    "hint": "将x=1代入函数表达式即可。"
+                    "question": "请根据原题类型生成一道类似的练习题，重点考察相同知识点。",
+                    "hint": f"参考当前错题的解题思路{kp_context}。"
                 }
             ],
-            "knowledge_links": [
-                {
-                    "id": "kl1",
-                    "name": "二次函数的基本性质",
-                    "url": "/knowledge/二次函数的基本性质"
-                }
-            ],
-            "review_suggestion": "建议3天后复习此题，重点关注二次函数的代入求值。"
+            "knowledge_links": knowledge_links,
+            "review_suggestion": f"建议3天后复习此题{kp_context}。",
         }
