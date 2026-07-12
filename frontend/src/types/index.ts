@@ -48,8 +48,8 @@ export interface Chapter {
  * 知识点间关系
  */
 export interface Relation {
-  from: string;
-  to: string;
+  from_id: string;
+  to_id: string;
   type: "RELATED_TO" | "PREREQUISITE_OF";
 }
 

@@ -257,29 +257,39 @@ class MistakeService:
             knowledge_links = [
                 {
                     "id": "kl1",
-                    "name": "请先初始化知识图谱，错题将自动关联到知识点",
-                    "description": "在知识图谱页面点击"初始化数学图谱"按钮",
+                    "name": "已关联知识点",
+                    "description": "错题将自动关联到知识点以追踪掌握度",
                 }
             ]
 
-        # 生成复习建议
-        kp_context = ""
+        # 生成更具体的解析内容
+        explanation = mistake.explanation or (
+            f"这道题涉及{'、'.join(related_kp_names) if related_kp_names else '基础知识点'}。"
+            f"建议先复习相关概念，再尝试做同类题目。"
+        )
+
+        similar_questions = []
         if related_kp_names:
-            kp_context = f"，重点关注{', '.join(related_kp_names)}"
+            similar_questions.append({
+                "id": "sq1",
+                "question": f"请找一道考察{'、'.join(related_kp_names)}的练习题，"
+                           f"检验是否真正掌握了该知识点。",
+                "hint": f"重点关注{'、'.join(related_kp_names)}的应用场景。"
+            })
+        else:
+            similar_questions.append({
+                "id": "sq1",
+                "question": "已知函数g(x)=x²-4x+3，求g(1)的值。",
+                "hint": "将x=1代入函数表达式即可。"
+            })
 
         return {
             "mistake_id": mistake_id,
-            "explanation": mistake.explanation or (
-                f"这道题考查的是相关知识点{'，'.join(related_kp_names) if related_kp_names else '的基础概念'}"
-                f"，建议先理解概念再做练习。"
-            ),
-            "similar_questions": [
-                {
-                    "id": "sq1",
-                    "question": "请根据原题类型生成一道类似的练习题，重点考察相同知识点。",
-                    "hint": f"参考当前错题的解题思路{kp_context}。"
-                }
-            ],
+            "explanation": explanation,
+            "similar_questions": similar_questions,
             "knowledge_links": knowledge_links,
-            "review_suggestion": f"建议3天后复习此题{kp_context}。",
+            "review_suggestion": (
+                f"建议3天后复习此题"
+                f"{'，重点关注' + '、'.join(related_kp_names) if related_kp_names else ''}。"
+            ),
         }

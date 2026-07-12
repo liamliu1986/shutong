@@ -89,8 +89,8 @@ function buildGraphLayout(
 
     edges.push({
       id: `edge-${index}`,
-      source: rel.from,
-      target: rel.to,
+      source: rel.from_id,
+      target: rel.to_id,
       type: 'smoothstep',
       animated: isPrerequisite,
       style: {

@@ -221,8 +221,8 @@ class KnowledgeGraphService:
             relations = []
             async for record in relations_result:
                 relations.append({
-                    "from": record["from_id"],
-                    "to": record["to_id"],
+                    "from_id": record["from_id"],
+                    "to_id": record["to_id"],
                     "type": record["type"]
                 })
 
@@ -252,6 +252,21 @@ class KnowledgeGraphService:
                 "last_updated": doc.get("last_updated"),
             })
         return results
+
+    @staticmethod
+    async def ensure_mastery_indexes():
+        """确保 mastery 集合的索引存在（幂等）"""
+        try:
+            db = get_mongodb()
+            await db.mastery.create_index(
+                [("child_id", 1), ("subject_id", 1), ("kp_id", 1)],
+                unique=True,
+                name="child_subject_kp_unique",
+            )
+            logger.info("mastery 索引已确保")
+        except Exception:
+            # 索引可能已存在，忽略
+            pass
 
     @staticmethod
     async def update_child_mastery(child_id: str, subject_name: str):
@@ -293,6 +308,21 @@ class KnowledgeGraphService:
                 }},
                 upsert=True,
             )
+
+        # 清理不再有错题的知识点掌握度记录
+        if kp_attempts:
+            tracked_kp_ids = list(kp_attempts.keys())
+            await db.mastery.delete_many({
+                "child_id": child_id,
+                "subject_id": subject_id,
+                "kp_id": {"$nin": tracked_kp_ids},
+            })
+        else:
+            # 所有知识点都没有错题了，全量清空掌握度
+            await db.mastery.delete_many({
+                "child_id": child_id,
+                "subject_id": subject_id,
+            })
 
         logger.info(
             f"掌握度更新完成: child_id={child_id}, "
@@ -518,14 +548,18 @@ class KnowledgeGraphService:
     @staticmethod
     async def create_relation(from_id: str, to_id: str, type: str) -> bool:
         """创建知识点间关系"""
+        if type not in ("RELATED_TO", "PREREQUISITE_OF"):
+            logger.warning(f"无效的关系类型: {type}")
+            return False
+
         driver = get_neo4j()
         async with driver.session() as session:
             result = await session.run("""
                 MATCH (a:KnowledgePoint {id: $from_id})
                 MATCH (b:KnowledgePoint {id: $to_id})
-                CREATE (a)-[r:{rel_type}]->(b)
+                CREATE (a)-[r:""" + type + """ {created_at: timestamp()}]->(b)
                 RETURN count(r) as created
-            """.replace("{rel_type}", type), from_id=from_id, to_id=to_id)
+            """, from_id=from_id, to_id=to_id)
             record = await result.single()
             created = record["created"] if record else 0
             logger.info(f"创建关系{'成功' if created else '失败, 知识点不存在'}: {from_id} -> {to_id}")
@@ -534,15 +568,19 @@ class KnowledgeGraphService:
     @staticmethod
     async def delete_relation(from_id: str, to_id: str, type: str) -> bool:
         """删除知识点间关系"""
+        if type not in ("RELATED_TO", "PREREQUISITE_OF"):
+            logger.warning(f"无效的关系类型: {type}")
+            return False
+
         driver = get_neo4j()
         async with driver.session() as session:
             result = await session.run("""
                 MATCH (a:KnowledgePoint {id: $from_id})
-                -[r:{rel_type}]->
+                -[r:""" + type + """]->
                 (b:KnowledgePoint {id: $to_id})
                 DELETE r
                 RETURN count(r) as deleted
-            """.replace("{rel_type}", type), from_id=from_id, to_id=to_id)
+            """, from_id=from_id, to_id=to_id)
             record = await result.single()
             deleted = record["deleted"] if record else 0
             logger.info(f"删除关系{'成功' if deleted else '失败, 未找到'}: {from_id} -> {to_id}")
