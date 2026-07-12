@@ -31,6 +31,54 @@ export interface KnowledgePoint {
   name: string;
   description?: string;
   order?: number;
+  importance?: number;
+}
+
+/**
+ * 知识图谱章节
+ */
+export interface Chapter {
+  id: string;
+  name: string;
+  order: number;
+  knowledge_points: KnowledgePoint[];
+}
+
+/**
+ * 知识点间关系
+ */
+export interface Relation {
+  from_id: string;
+  to_id: string;
+  type: "RELATED_TO" | "PREREQUISITE_OF";
+}
+
+/**
+ * 学科
+ */
+export interface Subject {
+  id: string;
+  name: string;
+  grade_level?: string;
+}
+
+/**
+ * 学科知识图谱
+ */
+export interface SubjectGraph {
+  subject_id: string;
+  chapters: Chapter[];
+  relations: Relation[];
+}
+
+/**
+ * 掌握度条目
+ */
+export interface MasteryEntry {
+  kp_id: string;
+  mastery_score: number;
+  total_attempts: number;
+  last_updated?: string;
 }
 
 /**

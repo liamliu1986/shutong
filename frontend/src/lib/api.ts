@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from "axios";
-import { Mistake, Question, Paper, GeneratePaperConfig } from "@/types";
+import { Mistake, Question, Paper, GeneratePaperConfig, Subject, SubjectGraph, MasteryEntry } from "@/types";
 
 /**
  * API 客户端
@@ -68,9 +68,52 @@ export const childrenAPI = {
  * 知识图谱 API
  */
 export const knowledgeGraphAPI = {
-  getSubjects: () => api.get("/subjects"),
+  getSubjects: () => api.get<Subject[]>("/subjects"),
   getSubjectGraph: (subjectId: string) =>
-    api.get(`/subjects/${subjectId}/graph`),
+    api.get<SubjectGraph>(`/subjects/${subjectId}/graph`),
+  initMathGraph: () => api.post("/subjects/init-math"),
+  getChildMastery: (childId: string, subjectId: string) =>
+    api.get<MasteryEntry[]>(`/children/${childId}/mastery`, {
+      params: { subject_id: subjectId },
+    }),
+  refreshMastery: (childId: string, subjectName: string) =>
+    api.post(`/children/${childId}/mastery/refresh`, null, {
+      params: { subject_name: subjectName },
+    }),
+
+  // ─── 学科 CRUD ───
+  createSubject: (data: { id: string; name: string; grade_level?: string }) =>
+    api.post("/subjects", data),
+  updateSubject: (subjectId: string, data: { name?: string; grade_level?: string }) =>
+    api.put(`/subjects/${subjectId}`, data),
+  deleteSubject: (subjectId: string) =>
+    api.delete(`/subjects/${subjectId}`),
+
+  // ─── 章节 CRUD ───
+  createChapter: (subjectId: string, data: { id: string; name: string; order: number }) =>
+    api.post(`/subjects/${subjectId}/chapters`, data),
+  updateChapter: (chapterId: string, data: { name?: string; order?: number }) =>
+    api.put(`/chapters/${chapterId}`, data),
+  deleteChapter: (chapterId: string) =>
+    api.delete(`/chapters/${chapterId}`),
+
+  // ─── 知识点 CRUD ───
+  createKnowledgePoint: (chapterId: string, data: {
+    id: string; name: string; description?: string; importance?: number
+  }) => api.post(`/chapters/${chapterId}/knowledge-points`, data),
+  updateKnowledgePoint: (kpId: string, data: {
+    name?: string; description?: string; importance?: number
+  }) => api.put(`/knowledge-points/${kpId}`, data),
+  deleteKnowledgePoint: (kpId: string) =>
+    api.delete(`/knowledge-points/${kpId}`),
+
+  // ─── 关系 CRUD ───
+  createRelation: (data: { from_id: string; to_id: string; type: string }) =>
+    api.post("/relations", data),
+  deleteRelation: (fromId: string, toId: string, type: string) =>
+    api.delete("/relations", {
+      params: { from_id: fromId, to_id: toId, type },
+    }),
 };
 
 /**

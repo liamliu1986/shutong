@@ -3,15 +3,54 @@
 负责 Neo4j 知识图谱的初始化、查询和管理
 """
 import logging
-from typing import List
+import math
+from datetime import datetime
+from typing import Dict, List, Optional
 
-from app.database import get_neo4j
+from app.database import get_neo4j, get_mongodb
 
 logger = logging.getLogger(__name__)
 
 
 class KnowledgeGraphService:
     """知识图谱服务"""
+
+    @staticmethod
+    async def _get_subject_id_by_name(subject_name: str) -> Optional[str]:
+        """根据学科名称查找 Neo4j 中的 subject_id"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            result = await session.run(
+                "MATCH (s:Subject {name: $name}) RETURN s.id as id",
+                name=subject_name,
+            )
+            record = await result.single()
+            return record["id"] if record else None
+
+    @staticmethod
+    async def get_knowledge_point_detail(kp_id: str) -> Optional[dict]:
+        """获取知识点详情"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            result = await session.run("""
+                MATCH (kp:KnowledgePoint {id: $kp_id})
+                OPTIONAL MATCH (kp)<-[:HAS_KNOWLEDGE_POINT]-(c:Chapter)
+                RETURN kp.id as id, kp.name as name,
+                       kp.description as description,
+                       kp.importance as importance,
+                       c.name as chapter_name, c.id as chapter_id
+            """, kp_id=kp_id)
+            record = await result.single()
+            if not record:
+                return None
+            return {
+                "id": record["id"],
+                "name": record["name"],
+                "description": record.get("description"),
+                "importance": record.get("importance"),
+                "chapter_name": record.get("chapter_name"),
+                "chapter_id": record.get("chapter_id"),
+            }
 
     @staticmethod
     async def init_math_graph():
@@ -153,7 +192,7 @@ class KnowledgeGraphService:
                 # 获取每个章节的知识点
                 kps_result = await session.run("""
                     MATCH (c:Chapter {id: $chapter_id})-[:HAS_KNOWLEDGE_POINT]->(kp:KnowledgePoint)
-                    RETURN kp.id as id, kp.name as name, kp.importance as importance
+                    RETURN kp.id as id, kp.name as name, kp.importance as importance, kp.description as description
                 """, chapter_id=record["id"])
 
                 kps = []
@@ -161,7 +200,8 @@ class KnowledgeGraphService:
                     kps.append({
                         "id": kp_record["id"],
                         "name": kp_record["name"],
-                        "importance": kp_record["importance"]
+                        "importance": kp_record["importance"],
+                        "description": kp_record.get("description")
                     })
 
                 chapters.append({
@@ -181,8 +221,8 @@ class KnowledgeGraphService:
             relations = []
             async for record in relations_result:
                 relations.append({
-                    "from": record["from_id"],
-                    "to": record["to_id"],
+                    "from_id": record["from_id"],
+                    "to_id": record["to_id"],
                     "type": record["type"]
                 })
 
@@ -196,8 +236,352 @@ class KnowledgeGraphService:
     async def get_child_mastery(child_id: str, subject_id: str) -> List[dict]:
         """获取孩子对某学科知识点的掌握度
 
-        MVP 阶段返回空数组，后续实现 Grades 关系
+        从 MongoDB mastery 集合中查询
         """
-        # TODO: 实现掌握度查询（需要 Child 节点和 Grades 关系）
-        # 暂返回空数组
-        return []
+        db = get_mongodb()
+        cursor = db.mastery.find({
+            "child_id": child_id,
+            "subject_id": subject_id,
+        })
+        results = []
+        async for doc in cursor:
+            results.append({
+                "kp_id": doc["kp_id"],
+                "mastery_score": doc["mastery_score"],
+                "total_attempts": doc["total_attempts"],
+                "last_updated": doc.get("last_updated"),
+            })
+        return results
+
+    @staticmethod
+    async def ensure_mastery_indexes():
+        """确保 mastery 集合的索引存在（幂等）"""
+        try:
+            db = get_mongodb()
+            await db.mastery.create_index(
+                [("child_id", 1), ("subject_id", 1), ("kp_id", 1)],
+                unique=True,
+                name="child_subject_kp_unique",
+            )
+            logger.info("mastery 索引已确保")
+        except Exception:
+            # 索引可能已存在，忽略
+            pass
+
+    @staticmethod
+    async def update_child_mastery(child_id: str, subject_name: str):
+        """根据错题数据更新孩子对指定学科的掌握度
+
+        从 MongoDB 查询错题，按知识点聚合后计算掌握度
+        """
+        subject_id = await KnowledgeGraphService._get_subject_id_by_name(subject_name)
+        if not subject_id:
+            logger.warning(f"未找到学科: {subject_name}")
+            return
+
+        db = get_mongodb()
+
+        # 获取该孩子的所有错题
+        cursor = db.mistakes.find({
+            "child_id": child_id,
+            "subject": subject_name,
+        })
+
+        # 按知识点聚合错题数
+        kp_attempts: Dict[str, int] = {}
+        async for mistake in cursor:
+            for kp_id in mistake.get("knowledge_points", []):
+                kp_attempts[kp_id] = kp_attempts.get(kp_id, 0) + 1
+
+        now = datetime.now()
+
+        # 计算掌握度并写入 MongoDB mastery 集合
+        for kp_id, count in kp_attempts.items():
+            mastery = round(100 * (1 - math.tanh(0.15 * count)), 1)
+            await db.mastery.update_one(
+                {"child_id": child_id, "subject_id": subject_id, "kp_id": kp_id},
+                {"$set": {
+                    "mastery_score": mastery,
+                    "total_attempts": count,
+                    "correct_attempts": 0,
+                    "last_updated": now,
+                }},
+                upsert=True,
+            )
+
+        # 清理不再有错题的知识点掌握度记录
+        if kp_attempts:
+            tracked_kp_ids = list(kp_attempts.keys())
+            await db.mastery.delete_many({
+                "child_id": child_id,
+                "subject_id": subject_id,
+                "kp_id": {"$nin": tracked_kp_ids},
+            })
+        else:
+            # 所有知识点都没有错题了，全量清空掌握度
+            await db.mastery.delete_many({
+                "child_id": child_id,
+                "subject_id": subject_id,
+            })
+
+        logger.info(
+            f"掌握度更新完成: child_id={child_id}, "
+            f"subject_id={subject_id}, kps={len(kp_attempts)}"
+        )
+
+    # ═══════════════════════════════════════════════════════════════
+    # Phase 3: CRUD 方法
+    # ═══════════════════════════════════════════════════════════════
+
+    # ─── 学科 CRUD ───────────────────────────────────────────────
+
+    @staticmethod
+    async def create_subject(
+        id: str, name: str, grade_level: Optional[str] = None
+    ) -> dict:
+        """创建学科"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            result = await session.run("""
+                CREATE (s:Subject {id: $id, name: $name})
+                SET s.grade_level = $grade_level
+                RETURN s.id as id, s.name as name, s.grade_level as grade_level
+            """, id=id, name=name, grade_level=grade_level or "")
+            record = await result.single()
+            if not record:
+                raise ValueError(f"创建学科失败: {id}")
+            logger.info(f"创建学科成功: {id}")
+            return {
+                "id": record["id"],
+                "name": record["name"],
+                "grade_level": record["grade_level"],
+            }
+
+    @staticmethod
+    async def update_subject(id: str, name: Optional[str] = None,
+                              grade_level: Optional[str] = None) -> bool:
+        """更新学科"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            sets = []
+            params: dict = {"id": id}
+            if name is not None:
+                sets.append("s.name = $name")
+                params["name"] = name
+            if grade_level is not None:
+                sets.append("s.grade_level = $grade_level")
+                params["grade_level"] = grade_level
+            if not sets:
+                return True
+            result = await session.run(
+                f"MATCH (s:Subject {{id: $id}}) SET {', '.join(sets)} RETURN s",
+                **params
+            )
+            record = await result.single()
+            if not record:
+                logger.warning(f"更新学科失败, 未找到: {id}")
+                return False
+            logger.info(f"更新学科成功: {id}")
+            return True
+
+    @staticmethod
+    async def delete_subject(id: str) -> bool:
+        """删除学科及其所有相关节点"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            result = await session.run("""
+                MATCH (s:Subject {id: $id})
+                OPTIONAL MATCH (s)-[:HAS_CHAPTER]->(c:Chapter)
+                OPTIONAL MATCH (c)-[:HAS_KNOWLEDGE_POINT]->(kp:KnowledgePoint)
+                DETACH DELETE kp, c, s
+                RETURN count(s) as deleted
+            """, id=id)
+            record = await result.single()
+            deleted = record["deleted"] if record else 0
+            logger.info(f"删除学科{'成功' if deleted else '失败, 未找到'}: {id}")
+            return bool(deleted)
+
+    # ─── 章节 CRUD ───────────────────────────────────────────────
+
+    @staticmethod
+    async def create_chapter(
+        subject_id: str, id: str, name: str, order: int
+    ) -> dict:
+        """创建章节"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            result = await session.run("""
+                MATCH (s:Subject {id: $subject_id})
+                CREATE (c:Chapter {id: $id, name: $name, order: $order})
+                CREATE (s)-[:HAS_CHAPTER {order: $order}]->(c)
+                RETURN c.id as id, c.name as name, c.order as order
+            """, subject_id=subject_id, id=id, name=name, order=order)
+            record = await result.single()
+            if not record:
+                raise ValueError(f"创建章节失败, 学科不存在: {subject_id}")
+            logger.info(f"创建章节成功: {id}")
+            return {
+                "id": record["id"],
+                "name": record["name"],
+                "order": record["order"],
+            }
+
+    @staticmethod
+    async def update_chapter(
+        id: str, name: Optional[str] = None, order: Optional[int] = None
+    ) -> bool:
+        """更新章节"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            sets = []
+            params: dict = {"id": id}
+            if name is not None:
+                sets.append("c.name = $name")
+                params["name"] = name
+            if order is not None:
+                sets.append("c.order = $order")
+                params["order"] = order
+            if not sets:
+                return True
+            result = await session.run(
+                f"MATCH (c:Chapter {{id: $id}}) SET {', '.join(sets)} RETURN c",
+                **params
+            )
+            record = await result.single()
+            logger.info(f"更新章节{'成功' if record else '失败, 未找到'}: {id}")
+            return bool(record)
+
+    @staticmethod
+    async def delete_chapter(id: str) -> bool:
+        """删除章节及其知识点"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            result = await session.run("""
+                MATCH (c:Chapter {id: $id})
+                OPTIONAL MATCH (c)-[:HAS_KNOWLEDGE_POINT]->(kp:KnowledgePoint)
+                DETACH DELETE kp, c
+                RETURN count(c) as deleted
+            """, id=id)
+            record = await result.single()
+            deleted = record["deleted"] if record else 0
+            logger.info(f"删除章节{'成功' if deleted else '失败, 未找到'}: {id}")
+            return bool(deleted)
+
+    # ─── 知识点 CRUD ─────────────────────────────────────────────
+
+    @staticmethod
+    async def create_knowledge_point(
+        chapter_id: str, id: str, name: str,
+        description: Optional[str] = None, importance: int = 3
+    ) -> dict:
+        """创建知识点"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            result = await session.run("""
+                MATCH (c:Chapter {id: $chapter_id})
+                CREATE (kp:KnowledgePoint {
+                    id: $id, name: $name,
+                    description: $description, importance: $importance
+                })
+                CREATE (c)-[:HAS_KNOWLEDGE_POINT]->(kp)
+                RETURN kp.id as id, kp.name as name,
+                       kp.importance as importance, kp.description as description
+            """, chapter_id=chapter_id, id=id, name=name,
+                 description=description or "", importance=importance)
+            record = await result.single()
+            if not record:
+                raise ValueError(f"创建知识点失败, 章节不存在: {chapter_id}")
+            logger.info(f"创建知识点成功: {id}")
+            return {
+                "id": record["id"],
+                "name": record["name"],
+                "importance": record["importance"],
+                "description": record["description"],
+            }
+
+    @staticmethod
+    async def update_knowledge_point(
+        id: str, name: Optional[str] = None,
+        description: Optional[str] = None, importance: Optional[int] = None
+    ) -> bool:
+        """更新知识点"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            sets = []
+            params: dict = {"id": id}
+            if name is not None:
+                sets.append("kp.name = $name")
+                params["name"] = name
+            if description is not None:
+                sets.append("kp.description = $description")
+                params["description"] = description
+            if importance is not None:
+                sets.append("kp.importance = $importance")
+                params["importance"] = importance
+            if not sets:
+                return True
+            result = await session.run(
+                f"MATCH (kp:KnowledgePoint {{id: $id}}) SET {', '.join(sets)} RETURN kp",
+                **params
+            )
+            record = await result.single()
+            logger.info(f"更新知识点{'成功' if record else '失败, 未找到'}: {id}")
+            return bool(record)
+
+    @staticmethod
+    async def delete_knowledge_point(id: str) -> bool:
+        """删除知识点"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            result = await session.run("""
+                MATCH (kp:KnowledgePoint {id: $id})
+                DETACH DELETE kp
+                RETURN count(kp) as deleted
+            """, id=id)
+            record = await result.single()
+            deleted = record["deleted"] if record else 0
+            logger.info(f"删除知识点{'成功' if deleted else '失败, 未找到'}: {id}")
+            return bool(deleted)
+
+    # ─── 关系 CRUD ───────────────────────────────────────────────
+
+    @staticmethod
+    async def create_relation(from_id: str, to_id: str, type: str) -> bool:
+        """创建知识点间关系"""
+        if type not in ("RELATED_TO", "PREREQUISITE_OF"):
+            logger.warning(f"无效的关系类型: {type}")
+            return False
+
+        driver = get_neo4j()
+        async with driver.session() as session:
+            result = await session.run("""
+                MATCH (a:KnowledgePoint {id: $from_id})
+                MATCH (b:KnowledgePoint {id: $to_id})
+                CREATE (a)-[r:""" + type + """ {created_at: timestamp()}]->(b)
+                RETURN count(r) as created
+            """, from_id=from_id, to_id=to_id)
+            record = await result.single()
+            created = record["created"] if record else 0
+            logger.info(f"创建关系{'成功' if created else '失败, 知识点不存在'}: {from_id} -> {to_id}")
+            return bool(created)
+
+    @staticmethod
+    async def delete_relation(from_id: str, to_id: str, type: str) -> bool:
+        """删除知识点间关系"""
+        if type not in ("RELATED_TO", "PREREQUISITE_OF"):
+            logger.warning(f"无效的关系类型: {type}")
+            return False
+
+        driver = get_neo4j()
+        async with driver.session() as session:
+            result = await session.run("""
+                MATCH (a:KnowledgePoint {id: $from_id})
+                -[r:""" + type + """]->
+                (b:KnowledgePoint {id: $to_id})
+                DELETE r
+                RETURN count(r) as deleted
+            """, from_id=from_id, to_id=to_id)
+            record = await result.single()
+            deleted = record["deleted"] if record else 0
+            logger.info(f"删除关系{'成功' if deleted else '失败, 未找到'}: {from_id} -> {to_id}")
+            return bool(deleted)

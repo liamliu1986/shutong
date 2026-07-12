@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import connect_mongodb, close_mongodb, connect_neo4j, close_neo4j
+from app.services.knowledge_graph_service import KnowledgeGraphService
 from app.api import auth, knowledge_graph, mistakes, question_bank, papers, children
 
 # 配置日志
@@ -32,6 +33,13 @@ async def lifespan(app: FastAPI):
     await connect_mongodb()
     await connect_neo4j()
     logger.info("数据库连接完成")
+
+    # 确保索引存在
+    try:
+        await KnowledgeGraphService.ensure_mastery_indexes()
+    except Exception as e:
+        logger.warning(f"mastery 索引初始化失败: {e}")
+
     yield
     # 关闭时断开数据库连接
     logger.info("正在关闭应用...")
