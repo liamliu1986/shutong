@@ -40,7 +40,7 @@ export interface Mistake {
   id: string;
   child_id: string;
   subject: string;
-  grade: number;
+  grade?: string;
   chapter: string;
   knowledge_points: string[];
   question_image_url: string;

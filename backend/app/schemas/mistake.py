@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -6,7 +6,7 @@ from datetime import datetime
 class MistakeCreate(BaseModel):
     child_id: str
     subject: str
-    grade: int = Field(ge=1, le=12)
+    grade: Optional[str] = None
     chapter: str
     question_text: str = ""
     question_image_url: str = ""
@@ -21,7 +21,7 @@ class MistakeCreate(BaseModel):
 
 class MistakeUpdate(BaseModel):
     subject: Optional[str] = None
-    grade: Optional[int] = Field(None, ge=1, le=12)
+    grade: Optional[str] = None
     chapter: Optional[str] = None
     question_text: Optional[str] = None
     question_image_url: Optional[str] = None
@@ -39,7 +39,7 @@ class MistakeResponse(BaseModel):
     id: str
     child_id: str
     subject: str
-    grade: int
+    grade: Optional[str] = None
     chapter: str
     knowledge_points: List[str] = []
     question_image_url: str = ""
@@ -53,6 +53,14 @@ class MistakeResponse(BaseModel):
     tags: List[str] = []
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("grade", mode="before")
+    @classmethod
+    def _coerce_grade_to_string(cls, value):
+        """兼容历史整数 grade 数据"""
+        if isinstance(value, int):
+            return str(value)
+        return value
 
 
 class MistakeListResponse(BaseModel):
