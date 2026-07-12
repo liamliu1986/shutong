@@ -3,15 +3,29 @@
 负责 Neo4j 知识图谱的初始化、查询和管理
 """
 import logging
-from typing import List
+import math
+from datetime import datetime
+from typing import Dict, List, Optional
 
-from app.database import get_neo4j
+from app.database import get_neo4j, get_mongodb
 
 logger = logging.getLogger(__name__)
 
 
 class KnowledgeGraphService:
     """知识图谱服务"""
+
+    @staticmethod
+    async def _get_subject_id_by_name(subject_name: str) -> Optional[str]:
+        """根据学科名称查找 Neo4j 中的 subject_id"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            result = await session.run(
+                "MATCH (s:Subject {name: $name}) RETURN s.id as id",
+                name=subject_name,
+            )
+            record = await result.single()
+            return record["id"] if record else None
 
     @staticmethod
     async def init_math_graph():
@@ -197,8 +211,65 @@ class KnowledgeGraphService:
     async def get_child_mastery(child_id: str, subject_id: str) -> List[dict]:
         """获取孩子对某学科知识点的掌握度
 
-        MVP 阶段返回空数组，后续实现 Grades 关系
+        从 MongoDB mastery 集合中查询
         """
-        # TODO: 实现掌握度查询（需要 Child 节点和 Grades 关系）
-        # 暂返回空数组
-        return []
+        db = get_mongodb()
+        cursor = db.mastery.find({
+            "child_id": child_id,
+            "subject_id": subject_id,
+        })
+        results = []
+        async for doc in cursor:
+            results.append({
+                "kp_id": doc["kp_id"],
+                "mastery_score": doc["mastery_score"],
+                "total_attempts": doc["total_attempts"],
+                "last_updated": doc.get("last_updated"),
+            })
+        return results
+
+    @staticmethod
+    async def update_child_mastery(child_id: str, subject_name: str):
+        """根据错题数据更新孩子对指定学科的掌握度
+
+        从 MongoDB 查询错题，按知识点聚合后计算掌握度
+        """
+        subject_id = await KnowledgeGraphService._get_subject_id_by_name(subject_name)
+        if not subject_id:
+            logger.warning(f"未找到学科: {subject_name}")
+            return
+
+        db = get_mongodb()
+
+        # 获取该孩子的所有错题
+        cursor = db.mistakes.find({
+            "child_id": child_id,
+            "subject": subject_name,
+        })
+
+        # 按知识点聚合错题数
+        kp_attempts: Dict[str, int] = {}
+        async for mistake in cursor:
+            for kp_id in mistake.get("knowledge_points", []):
+                kp_attempts[kp_id] = kp_attempts.get(kp_id, 0) + 1
+
+        now = datetime.now()
+
+        # 计算掌握度并写入 MongoDB mastery 集合
+        for kp_id, count in kp_attempts.items():
+            mastery = round(100 * (1 - math.tanh(0.15 * count)), 1)
+            await db.mastery.update_one(
+                {"child_id": child_id, "subject_id": subject_id, "kp_id": kp_id},
+                {"$set": {
+                    "mastery_score": mastery,
+                    "total_attempts": count,
+                    "correct_attempts": 0,
+                    "last_updated": now,
+                }},
+                upsert=True,
+            )
+
+        logger.info(
+            f"掌握度更新完成: child_id={child_id}, "
+            f"subject_id={subject_id}, kps={len(kp_attempts)}"
+        )

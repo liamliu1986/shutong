@@ -2,6 +2,7 @@
 
 提供错题的 CRUD 操作和查询功能。
 """
+import asyncio
 import logging
 from datetime import datetime
 from typing import Optional
@@ -16,6 +17,7 @@ from app.schemas.mistake import (
     MistakeResponse,
     MistakeListResponse,
 )
+from app.services.knowledge_graph_service import KnowledgeGraphService
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,14 @@ class MistakeService:
             del mistake_dict["_id"]
 
         logger.info(f"创建错题成功: {mistake_dict['id']}")
+
+        # 触发掌握度更新（不阻塞返回）
+        asyncio.create_task(
+            KnowledgeGraphService.update_child_mastery(
+                data.child_id, data.subject
+            )
+        )
+
         return MistakeResponse(**mistake_dict)
 
     async def get_mistakes(
