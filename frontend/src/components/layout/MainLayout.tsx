@@ -15,6 +15,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, username = '用户' }
 
   const navItems = [
     { href: '/dashboard', label: '首页', icon: '📊' },
+    { href: '/children', label: '孩子管理', icon: '👶' },
     { href: '/knowledge-graph', label: '知识图谱', icon: '📚' },
     { href: '/mistakes', label: '错题本', icon: '📝' },
     { href: '/question-bank', label: '题库管理', icon: '❓' },
