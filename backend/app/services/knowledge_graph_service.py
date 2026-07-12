@@ -118,7 +118,9 @@ class KnowledgeGraphService:
                         id: $id,
                         name: $name,
                         description: $description,
-                        importance: $importance
+                        importance: $importance,
+                        pos_x: 0,
+                        pos_y: 0
                     })
                     CREATE (c)-[:HAS_KNOWLEDGE_POINT]->(kp)
                 """, **kp)
@@ -192,7 +194,8 @@ class KnowledgeGraphService:
                 # 获取每个章节的知识点
                 kps_result = await session.run("""
                     MATCH (c:Chapter {id: $chapter_id})-[:HAS_KNOWLEDGE_POINT]->(kp:KnowledgePoint)
-                    RETURN kp.id as id, kp.name as name, kp.importance as importance, kp.description as description
+                    RETURN kp.id as id, kp.name as name, kp.importance as importance,
+                           kp.description as description, kp.pos_x as pos_x, kp.pos_y as pos_y
                 """, chapter_id=record["id"])
 
                 kps = []
@@ -201,7 +204,9 @@ class KnowledgeGraphService:
                         "id": kp_record["id"],
                         "name": kp_record["name"],
                         "importance": kp_record["importance"],
-                        "description": kp_record.get("description")
+                        "description": kp_record.get("description"),
+                        "pos_x": kp_record.get("pos_x", 0),
+                        "pos_y": kp_record.get("pos_y", 0),
                     })
 
                 chapters.append({
@@ -542,6 +547,21 @@ class KnowledgeGraphService:
             deleted = record["deleted"] if record else 0
             logger.info(f"删除知识点{'成功' if deleted else '失败, 未找到'}: {id}")
             return bool(deleted)
+
+    # ─── 位置批量更新 ────────────────────────────────────────────
+
+    @staticmethod
+    async def save_positions(positions: list) -> bool:
+        """批量保存知识点位置"""
+        driver = get_neo4j()
+        async with driver.session() as session:
+            for pos in positions:
+                await session.run("""
+                    MATCH (kp:KnowledgePoint {id: $id})
+                    SET kp.pos_x = $x, kp.pos_y = $y
+                """, id=pos["id"], x=pos["x"], y=pos["y"])
+            logger.info(f"保存 {len(positions)} 个节点位置")
+            return True
 
     # ─── 关系 CRUD ───────────────────────────────────────────────
 

@@ -49,6 +49,13 @@ class KnowledgePointUpdate(BaseModel):
     importance: Optional[int] = Field(None, ge=1, le=5)
 
 
+class KnowledgePointPosition(BaseModel):
+    """知识点位置"""
+    id: str
+    x: float
+    y: float
+
+
 class RelationCreate(BaseModel):
     """创建关系请求"""
     from_id: str = Field(..., description="源知识点 ID")
@@ -64,6 +71,8 @@ class KnowledgePointResponse(BaseModel):
     name: str
     importance: int = 0
     description: Optional[str] = None
+    pos_x: float = 0
+    pos_y: float = 0
 
 
 class ChapterResponse(BaseModel):

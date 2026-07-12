@@ -81,6 +81,10 @@ export const knowledgeGraphAPI = {
       params: { subject_name: subjectName },
     }),
 
+  // ─── 节点位置 ───
+  savePositions: (positions: { id: string; x: number; y: number }[]) =>
+    api.put("/knowledge-points/positions", positions),
+
   // ─── 学科 CRUD ───
   createSubject: (data: { id: string; name: string; grade_level?: string }) =>
     api.post("/subjects", data),

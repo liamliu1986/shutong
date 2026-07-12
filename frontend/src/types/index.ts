@@ -32,6 +32,8 @@ export interface KnowledgePoint {
   description?: string;
   order?: number;
   importance?: number;
+  pos_x?: number;
+  pos_y?: number;
 }
 
 /**

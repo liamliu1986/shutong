@@ -15,6 +15,7 @@ from app.schemas.knowledge_graph import (
     ChapterUpdate,
     KnowledgePointCreate,
     KnowledgePointUpdate,
+    KnowledgePointPosition,
     RelationCreate,
     SubjectGraphResponse,
     MasteryEntry,
@@ -174,6 +175,17 @@ async def delete_knowledge_point(
     if not success:
         raise HTTPException(status_code=404, detail="知识点未找到")
     return {"message": "删除成功"}
+
+
+@router.put("/knowledge-points/positions")
+async def batch_save_positions(
+    positions: List[KnowledgePointPosition],
+    current_user: dict = Depends(get_current_user),
+):
+    """批量保存知识点位置"""
+    pos_list = [{"id": p.id, "x": p.x, "y": p.y} for p in positions]
+    await KnowledgeGraphService.save_positions(pos_list)
+    return {"message": f"已保存 {len(pos_list)} 个节点位置"}
 
 
 # ─── 关系端点 ──────────────────────────────────────────────────────

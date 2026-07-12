@@ -24,6 +24,12 @@ interface SelectedNodeInfo {
 
 type AddMode = 'chapter' | 'knowledgePoint' | null;
 
+/** 待确认的连线 */
+interface PendingConnection {
+  source: string;
+  target: string;
+}
+
 /**
  * 知识图谱页面
  *
@@ -47,6 +53,7 @@ const KnowledgeGraphPage: React.FC = () => {
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
   const [addMode, setAddMode] = useState<AddMode>(null);
   const [selectedKpId, setSelectedKpId] = useState<string | null>(null);
+  const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null);
 
   // 默认选中第一个孩子
   useEffect(() => {
@@ -221,26 +228,35 @@ const KnowledgeGraphPage: React.FC = () => {
     [isEditable, graph]
   );
 
-  /** 连接两个知识点 → 创建关系 */
+  /** 连接两个知识点 → 弹出关系类型选择 */
   const handleConnect = useCallback(
-    async (connection: Connection) => {
+    (connection: Connection) => {
       if (!connection.source || !connection.target) return;
+      setPendingConnection({
+        source: connection.source,
+        target: connection.target,
+      });
+    },
+    []
+  );
 
-      const relType = window.prompt('关系类型：1=关联(RELATED_TO), 2=前置(PREREQUISITE_OF)', '1');
-      const type = relType === '2' ? 'PREREQUISITE_OF' : 'RELATED_TO';
-
+  /** 确认创建关系 */
+  const confirmConnection = useCallback(
+    async (type: 'RELATED_TO' | 'PREREQUISITE_OF') => {
+      if (!pendingConnection) return;
       try {
         await knowledgeGraphAPI.createRelation({
-          from_id: connection.source,
-          to_id: connection.target,
+          from_id: pendingConnection.source,
+          to_id: pendingConnection.target,
           type,
         });
+        setPendingConnection(null);
         refreshGraph();
       } catch {
-        // 忽略错误
+        setPendingConnection(null);
       }
     },
-    [refreshGraph]
+    [pendingConnection, refreshGraph]
   );
 
   /** 节点编辑后保存 */
@@ -476,6 +492,43 @@ const KnowledgeGraphPage: React.FC = () => {
           onClose={() => setAddMode(null)}
           onCreated={handleNodeCreated}
         />
+      )}
+
+      {/* 连线关系类型选择 */}
+      {pendingConnection && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-80 mx-4">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">选择关系类型</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              确定这两个知识点之间的关系
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => confirmConnection('RELATED_TO')}
+                className="px-4 py-3 bg-gray-100 rounded-lg text-sm text-gray-700 hover:bg-gray-200 transition-colors text-left"
+              >
+                <span className="font-medium">关联</span>
+                <span className="text-gray-400 ml-2">知识点之间有直接联系</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmConnection('PREREQUISITE_OF')}
+                className="px-4 py-3 bg-blue-50 rounded-lg text-sm text-blue-700 hover:bg-blue-100 transition-colors text-left"
+              >
+                <span className="font-medium">前置条件</span>
+                <span className="text-blue-400 ml-2">必须先掌握前者才能学后者</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingConnection(null)}
+                className="px-4 py-2 text-sm text-gray-400 hover:text-gray-600 transition-colors mt-2"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </MainLayout>
   );
