@@ -2,15 +2,21 @@
 知识图谱 API 路由
 提供学科、知识点、掌握度等接口
 """
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.dependencies import get_current_user
 from app.services.knowledge_graph_service import KnowledgeGraphService
+from app.schemas.knowledge_graph import (
+    SubjectResponse,
+    SubjectGraphResponse,
+    MasteryEntry,
+)
 
 router = APIRouter()
 
 
-@router.get("/subjects")
+@router.get("/subjects", response_model=List[SubjectResponse])
 async def get_subjects(current_user: dict = Depends(get_current_user)):
     """获取所有学科列表
 
@@ -19,7 +25,7 @@ async def get_subjects(current_user: dict = Depends(get_current_user)):
     return await KnowledgeGraphService.get_subjects()
 
 
-@router.get("/subjects/{subject_id}/graph")
+@router.get("/subjects/{subject_id}/graph", response_model=SubjectGraphResponse)
 async def get_subject_graph(
     subject_id: str,
     current_user: dict = Depends(get_current_user)
@@ -32,7 +38,18 @@ async def get_subject_graph(
     return await KnowledgeGraphService.get_subject_graph(subject_id)
 
 
-@router.get("/children/{child_id}/mastery")
+@router.post("/subjects/init-math")
+async def init_math_graph(current_user: dict = Depends(get_current_user)):
+    """初始化数学知识图谱
+
+    清空并重建数学学科的知识图谱数据
+    需要 JWT 认证
+    """
+    await KnowledgeGraphService.init_math_graph()
+    return {"message": "数学知识图谱初始化完成"}
+
+
+@router.get("/children/{child_id}/mastery", response_model=List[MasteryEntry])
 async def get_child_mastery(
     child_id: str,
     subject_id: str,

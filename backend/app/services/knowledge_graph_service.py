@@ -153,7 +153,7 @@ class KnowledgeGraphService:
                 # 获取每个章节的知识点
                 kps_result = await session.run("""
                     MATCH (c:Chapter {id: $chapter_id})-[:HAS_KNOWLEDGE_POINT]->(kp:KnowledgePoint)
-                    RETURN kp.id as id, kp.name as name, kp.importance as importance
+                    RETURN kp.id as id, kp.name as name, kp.importance as importance, kp.description as description
                 """, chapter_id=record["id"])
 
                 kps = []
@@ -161,7 +161,8 @@ class KnowledgeGraphService:
                     kps.append({
                         "id": kp_record["id"],
                         "name": kp_record["name"],
-                        "importance": kp_record["importance"]
+                        "importance": kp_record["importance"],
+                        "description": kp_record.get("description")
                     })
 
                 chapters.append({
