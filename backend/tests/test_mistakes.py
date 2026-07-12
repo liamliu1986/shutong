@@ -353,5 +353,5 @@ async def test_historical_integer_grade_compatibility(client: AsyncClient, auth_
     )
     assert response.status_code == 200
     data = response.json()
-    # 只要序列化后值可接受即可（Pydantic 默认会转为字符串）
-    assert data["grade"] in (8, "8")
+    # 验证历史整数 grade 被正确序列化为字符串
+    assert data["grade"] == "8"
