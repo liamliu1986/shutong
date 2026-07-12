@@ -52,6 +52,8 @@ const ChildrenPage: React.FC = () => {
   const [grade, setGrade] = useState<number>(7);
   const [subjects, setSubjects] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [deleteError, setDeleteError] = useState('');
 
   /**
    * 拉取孩子列表
@@ -151,10 +153,23 @@ const ChildrenPage: React.FC = () => {
       return;
     }
 
+    setDeletingIds((prev) => new Set(prev).add(childId));
+    setDeleteError('');
+
     try {
       await childrenAPI.deleteChild(childId);
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(childId);
+        return next;
+      });
       fetchChildren();
     } catch (err: unknown) {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(childId);
+        return next;
+      });
       let message = '删除失败，请稍后重试';
       if (axios.isAxiosError(err)) {
         const detail = err.response?.data?.detail;
@@ -162,7 +177,7 @@ const ChildrenPage: React.FC = () => {
           message = detail;
         }
       }
-      setListError(message);
+      setDeleteError(message);
     }
   };
 
@@ -265,6 +280,19 @@ const ChildrenPage: React.FC = () => {
         <section>
           <h2 className="text-lg font-semibold text-gray-800 mb-4">孩子列表</h2>
 
+          {deleteError && (
+            <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-md text-sm flex justify-between items-center">
+              <span>{deleteError}</span>
+              <button
+                type="button"
+                onClick={() => setDeleteError('')}
+                className="px-3 py-1 border border-red-300 rounded hover:bg-red-100 transition-colors"
+              >
+                关闭
+              </button>
+            </div>
+          )}
+
           {isLoading && (
             <div className="flex justify-center items-center h-64">
               <span className="text-gray-500">加载中...</span>
@@ -307,9 +335,10 @@ const ChildrenPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => handleDelete(child.id)}
-                      className="text-red-500 hover:text-red-700 text-sm"
+                      disabled={deletingIds.has(child.id)}
+                      className="text-red-500 hover:text-red-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      删除
+                      {deletingIds.has(child.id) ? '删除中...' : '删除'}
                     </button>
                   </div>
 
